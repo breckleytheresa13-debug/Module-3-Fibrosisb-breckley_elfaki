@@ -1,97 +1,120 @@
 '''Module 3: count black and white pixels and compute the percentage of white pixels in a .jpg image and extrapolate points'''
-
-from termcolor import colored
-import cv2
+#%%
+# %%
+from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+from scipy.interpolate import interp1d
 
-# Load the images you want to analyze
+# --------------------------------------------------
+# 5 image files and their depths from the CSV
+# --------------------------------------------------
 
-filenames = [
-    r"../images/MASK_SK658 Llobe ch010039.jpg",
-    r"../images/MASK_SK658 Slobe ch010066.jpg",
-    r"../images/MASK_SK658 Slobe ch010147.jpg",
-    r"../images/MASK_SK658 Slobe ch010110.jpg",
-    r"../images/MASK_SK658 Slobe ch010130.jpg",
-    r"../images/MASK_SK658 Slobe ch010114.jpg",
+image_info = [
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010021.jpg", 30),
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010017.jpg", 45),
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010019.jpg", 60),
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010022.jpg", 80),
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010018.jpg", 90),
+    ("C:\\Users\\15712\\OneDrive - University of Virginia\\Comp Mod 3\\Module-3-Fibrosisb-breckley_elfaki\\images\\MASK_Sk658 Llobe ch010023.jpg", 100),
+
 ]
 
-# Enter the depth of each image (in the same order that the images are listed above; you can find these in the .csv file provided to you which is tilted: "Filenames and Depths for Students")
+threshold_value = 127
+results = []
 
-depths = [
-    15,
-    1000,
-    3000,
-    5300,
-    7000,
-    9900
-]
+print("Counts of pixels by color in each image\n")
 
-# Make the lists that will be used
+# --------------------------------------------------
+# Process each image one at a time
+# --------------------------------------------------
 
-images = []
-white_counts = []
-black_counts = []
-white_percents = []
+for filepath, depth in image_info:
+    path = Path(filepath)
 
-# Build the list of all the images you are analyzing
+    if not path.exists():
+        print(f"File not found: {path}")
+        continue
 
-for filename in filenames:
-    img = cv2.imread(filename, 0)
-    images.append(img)
+    # Open image and convert to grayscale
+    img = Image.open(path).convert("L")
+    img_array = np.array(img)
 
-# For each image (until the end of the list of images), calculate the number of black and white pixels and make a list that contains this information for each filename.
+    # Make binary image:
+    # pixels > threshold are white, the rest are black
+    binary = img_array > threshold_value
 
-for x in range(len(filenames)):
-    _, binary = cv2.threshold(images[x], 127, 255, cv2.THRESH_BINARY)
+    white_count = np.count_nonzero(binary)
+    total_pixels = binary.size
+    black_count = total_pixels - white_count
+    white_percent = 100 * white_count / total_pixels
 
-    white = np.sum(binary == 255)
-    black = np.sum(binary == 0)
+    results.append({
+        "Filename": path.name,
+        "Depth (microns)": depth,
+        "White pixels": white_count,
+        "Black pixels": black_count,
+        "White percent": white_percent
+    })
 
-    white_counts.append(white)
-    black_counts.append(black)
+    print(f"{path.name}")
+    print(f"White pixels: {white_count}")
+    print(f"Black pixels: {black_count}")
+    print(f"{white_percent:.2f}% White | Depth: {depth} microns\n")
 
-# Print the number of white and black pixels in each image.
+# --------------------------------------------------
+# Save results to CSV
+# --------------------------------------------------
 
-print(colored("Counts of pixel by color in each image", "yellow"))
-for x in range(len(filenames)):
-    print(colored(f"White pixels in image {x}: {white_counts[x]}", "white"))
-    print(colored(f"Black pixels in image {x}: {black_counts[x]}", "black"))
-    print()
-
-# Calculate the percentage of pixels in each image that are white and make a list that contains these percentages for each filename
-
-for x in range(len(filenames)):
-    white_percent = (
-        100 * (white_counts[x] / (black_counts[x] + white_counts[x])))
-    white_percents.append(white_percent)
-
-# Print the filename (on one line in red font), and below that line print the percent white pixels and depth into the lung where the image was obtained
-
-print(colored("Percent white px:", "yellow"))
-for x in range(len(filenames)):
-    print(colored(f'{filenames[x]}:', "red"))
-    print(f'{white_percents[x]}% White | Depth: {depths[x]} microns')
-    print()
-
-'''Write your data to a .csv file'''
-
-# Create a DataFrame that includes the filenames, depths, and percentage of white pixels
-df = pd.DataFrame({
-    'Filenames': filenames,
-    'Depths': depths,
-    'White percents': white_percents
-})
-
-# Write that DataFrame to a .csv file
-
-df.to_csv('Percent_White_Pixels.csv', index=False)
+df = pd.DataFrame(results)
+df.to_csv("Percent_White_Pixels.csv", index=False)
 
 print("The .csv file 'Percent_White_Pixels.csv' has been created.")
 
-'''the .csv writing subroutine ends here'''
+# --------------------------------------------------
+# Plot depth vs percent white
+# --------------------------------------------------
+
+depths = df["Depth (microns)"].to_numpy()
+white_percents = df["White percent"].to_numpy()
+
+plt.figure(figsize=(8, 5))
+plt.scatter(depths, white_percents)
+plt.plot(depths, white_percents)
+plt.title("Depth of Image vs Percentage of White Pixels")
+plt.xlabel("Depth of image (microns)")
+plt.ylabel("White pixels as % of total pixels")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# --------------------------------------------------
+# Optional interpolation
+# Uncomment if needed
+# --------------------------------------------------
+
+# interpolate_depth = float(input("Enter the depth to interpolate (in microns): "))
+# interpolator = interp1d(depths, white_percents, kind="linear")
+# interpolated_percent = float(interpolator(interpolate_depth))
+
+# print(
+#     f"The interpolated point is at depth {interpolate_depth} microns "
+#     f"with white pixel percentage {interpolated_percent:.2f}%."
+# )
+
+# plt.figure(figsize=(8, 5))
+# plt.scatter(depths, white_percents, label="Original data")
+# plt.plot(depths, white_percents)
+# plt.scatter(interpolate_depth, interpolated_percent, color="red", s=80, label="Interpolated point")
+# plt.title("Depth vs Percentage of White Pixels with Interpolated Point")
+# plt.xlabel("Depth of image (microns)")
+# plt.ylabel("White pixels as % of total pixels")
+# plt.grid(True)
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
 
 
 ##############
@@ -141,3 +164,5 @@ print("The .csv file 'Percent_White_Pixels.csv' has been created.")
 # # Adjust layout to prevent overlap
 # plt.tight_layout()
 # plt.show()
+
+# %%
