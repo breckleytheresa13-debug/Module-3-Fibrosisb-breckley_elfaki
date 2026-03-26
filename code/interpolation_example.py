@@ -1,6 +1,9 @@
+#%%
+
 import numpy as np
 import matplotlib.pyplot as plt
 
+#%%
 """LINEAR INTERPOLATION"""
 
 # Known points
@@ -22,7 +25,7 @@ print("A = ", A)
 
 # # Compute one specific point (x=2)
 a1, a2 = A
-x_value = 2
+x_value = 2.99997
 y_value = a1 + a2 * x_value
 print("At x = 2, y =", y_value)
 
@@ -45,6 +48,7 @@ plt.grid(True)
 plt.legend()
 plt.show()
 
+#%%
 """QUADRATIC INTERPOLATION"""
 
 # Known points
@@ -79,9 +83,9 @@ y = a1 + a2 * x + a3 * x**2
 plt.scatter(x_points, y_points, color='blue', s=60, label='Known Points')
 
 # Compute one specific point (x=4)
-x_value = 4
+x_value = 4.95
 y_value = a1 + a2 * x_value + a3 * x_value**2
-print("At x = 4, y =", y_value)
+print("At x = 5, y =", y_value)
 
 # Plot the parabola
 plt.plot(x, y, label='y = 0.375 + 0.5x + 0.125x²')
@@ -96,3 +100,4 @@ plt.ylabel('y')
 plt.grid(True)
 plt.legend()
 plt.show()
+# %%
