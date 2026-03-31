@@ -1,5 +1,7 @@
-Filename,Depth (microns),White pixels,Black pixels,White percent
-MASK_Sk658 Llobe ch010022.jpg,80,33151,4161153,0.7903814315795898
-MASK_Sk658 Llobe ch010032.jpg,500,48667,4145637,1.1603116989135742
-MASK_Sk658 Llobe ch010171.jpg,810,57531,4136773,1.3716459274291992
-MASK_Sk658 Llobe ch010164.jpg,2200,65021,4129283,1.5502214431762695
+Filenames,Depths,White percents
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_Sk658 Llobe ch010039.jpg,15,0.5161285400390625
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_SK658 Slobe ch010066.jpg,1000,1.4475584030151367
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_SK658 Slobe ch010147.jpg,3000,1.9200801849365234
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_SK658 Slobe ch010110.jpg,5300,2.289104461669922
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_SK658 Slobe ch010130.jpg,7000,2.684903144836426
+C:\Users\15712\OneDrive - University of Virginia\Comp Mod 3\Module-3-Fibrosisb-breckley_elfaki\images\MASK_SK658 Slobe ch010114.jpg,9900,5.777835845947266
