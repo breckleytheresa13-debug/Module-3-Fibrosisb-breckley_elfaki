@@ -183,16 +183,11 @@ plot_zoom(x, y, 0, 2000, "Zoom: Shallow Depth (0–2000 microns)")
 plot_zoom(x, y, 2000, 6000, "Zoom: Mid Depth (2000–6000 microns)")
 
 # Deep region
-plot_zoom(x, y, 6000, 10 000, "Zoom: Deep Depth (6000–10000 microns)")
+plot_zoom(x, y, 6000, 10000, "Zoom: Deep Depth (6000–10000 microns)")
 
 
 
-
-
-
-
-# %%
-
+#%%
 # ---------------------------
 # Interpolation comparison by region
 # ---------------------------
@@ -201,13 +196,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def compare_interpolation_region(df, xmin, xmax, region_name, num_compare_points=5):
+def compare_interpolation_region_all_points(df, xmin, xmax, region_name):
+    # Select region
     region_df = df[
         (df["Depth (microns)"] >= xmin) &
         (df["Depth (microns)"] <= xmax)
     ].copy()
 
-    # Combine duplicate depths by averaging white percent
+    # Combine duplicate depths by averaging White percent
     region_df = (
         region_df.groupby("Depth (microns)", as_index=False)["White percent"]
         .mean()
@@ -221,13 +217,209 @@ def compare_interpolation_region(df, xmin, xmax, region_name, num_compare_points
     print(f"\n--- {region_name} Region ---")
     print(f"Total unique depth points in region: {len(region_df)}")
 
-    if len(region_df) < 8:
-        print("Not enough unique points in this region for comparison.")
-        return None
+    if len(region_df) < 6:
+        print("Not enough unique points in this region for interpolation comparison.")
+        return None, None
 
-    # Keep every other point for interpolation
+    # Keep every other point
     train_df = region_df.iloc[::2].copy()
     test_df = region_df.iloc[1::2].copy()
+
+    x_train = train_df["Depth (microns)"].values
+    y_train = train_df["White percent"].values
+    x_test = test_df["Depth (microns)"].values
+    y_test = test_df["White percent"].values
+
+    # Only test points inside interpolation range
+    valid_mask = (x_test >= x_train.min()) & (x_test <= x_train.max())
+    x_test = x_test[valid_mask]
+    y_test = y_test[valid_mask]
+
+    if len(x_test) == 0:
+        print("No removed points fell inside the interpolation range.")
+        return None, None
+
+    # Linear interpolation
+    linear_interp = interp1d(x_train, y_train, kind="linear")
+    y_linear_pred = linear_interp(x_test)
+
+    # Quadratic interpolation
+    quadratic_possible = len(np.unique(x_train)) >= 3
+    if quadratic_possible:
+        quadratic_interp = interp1d(x_train, y_train, kind="quadratic")
+        y_quad_pred = quadratic_interp(x_test)
+    else:
+        quadratic_interp = None
+        y_quad_pred = np.full_like(y_test, np.nan, dtype=float)
+
+    # Build comparison table for ALL removed points
+    compare_df = pd.DataFrame({
+        "Depth (microns)": x_test,
+        "Actual fibrosis (%)": y_test,
+        "Linear interpolation (%)": y_linear_pred,
+        "Quadratic interpolation (%)": y_quad_pred,
+        "Linear abs error": np.abs(y_linear_pred - y_test),
+        "Quadratic abs error": np.abs(y_quad_pred - y_test)
+    })
+
+    # Percent errors
+    compare_df["Linear percent error"] = np.where(
+        compare_df["Actual fibrosis (%)"] != 0,
+        compare_df["Linear abs error"] / compare_df["Actual fibrosis (%)"] * 100,
+        np.nan
+    )
+    compare_df["Quadratic percent error"] = np.where(
+        compare_df["Actual fibrosis (%)"] != 0,
+        compare_df["Quadratic abs error"] / compare_df["Actual fibrosis (%)"] * 100,
+        np.nan
+    )
+
+    print("\nComparison table for ALL removed points:")
+    print(compare_df)
+
+    # Reconstruct full datasets:
+    # 1) original full data
+    # 2) linear reconstruction = kept points + linear predictions
+    # 3) quadratic reconstruction = kept points + quadratic predictions
+
+    linear_reconstructed_df = pd.DataFrame({
+        "Depth (microns)": np.concatenate([x_train, x_test]),
+        "Fibrosis (%)": np.concatenate([y_train, y_linear_pred])
+    }).sort_values(by="Depth (microns)")
+
+    quadratic_reconstructed_df = pd.DataFrame({
+        "Depth (microns)": np.concatenate([x_train, x_test]),
+        "Fibrosis (%)": np.concatenate([y_train, y_quad_pred])
+    }).sort_values(by="Depth (microns)")
+
+    original_df = pd.DataFrame({
+        "Depth (microns)": x_all,
+        "Fibrosis (%)": y_all
+    }).sort_values(by="Depth (microns)")
+
+    # Plot all three curves together
+    plt.figure(figsize=(9, 6))
+
+    # Original full dataset
+    plt.plot(
+        original_df["Depth (microns)"],
+        original_df["Fibrosis (%)"],
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        label="Original data"
+    )
+
+    # Linear reconstructed dataset
+    plt.plot(
+        linear_reconstructed_df["Depth (microns)"],
+        linear_reconstructed_df["Fibrosis (%)"],
+        marker="x",
+        linestyle="-",
+        linewidth=2,
+        label="Linear interpolation + kept points"
+    )
+
+    # Quadratic reconstructed dataset
+    if quadratic_possible:
+        plt.plot(
+            quadratic_reconstructed_df["Depth (microns)"],
+            quadratic_reconstructed_df["Fibrosis (%)"],
+            marker="^",
+            linestyle="-",
+            linewidth=2,
+            label="Quadratic interpolation + kept points"
+        )
+
+    plt.xlabel("Depth (microns)")
+    plt.ylabel("Fibrosis (%)")
+    plt.title(f"{region_name} Region: Original vs Reconstructed Data")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # Summary metrics
+    summary = {
+        "Region": region_name,
+        "Linear mean abs error": compare_df["Linear abs error"].mean(),
+        "Quadratic mean abs error": compare_df["Quadratic abs error"].mean(),
+        "Linear mean percent error": compare_df["Linear percent error"].mean(),
+        "Quadratic mean percent error": compare_df["Quadratic percent error"].mean()
+    }
+
+    return compare_df, summary
+
+
+# ---------------------------
+# Run interpolation comparison for each region
+# ---------------------------
+shallow_compare, shallow_summary = compare_interpolation_region_all_points(
+    results_df, 0, 2000, "Shallow"
+)
+
+mid_compare, mid_summary = compare_interpolation_region_all_points(
+    results_df, 2000, 6000, "Mid"
+)
+
+deep_compare, deep_summary = compare_interpolation_region_all_points(
+    results_df, 6000, 10000, "Deep"
+)
+
+# ---------------------------
+# Summary table
+# ---------------------------
+summary_df = pd.DataFrame([
+    shallow_summary,
+    mid_summary,
+    deep_summary
+])
+
+print("\nAverage interpolation error summary:")
+print(summary_df)
+
+
+#%%
+
+# ---------------------------
+# Three-point interpolation by region
+# Keep first, median, and last points
+# ---------------------------
+from scipy.interpolate import interp1d
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def three_point_interpolation_region(df, xmin, xmax, region_name):
+    # Select region
+    region_df = df[
+        (df["Depth (microns)"] >= xmin) &
+        (df["Depth (microns)"] <= xmax)
+    ].copy()
+
+    # Combine duplicate depths by averaging White percent
+    region_df = (
+        region_df.groupby("Depth (microns)", as_index=False)["White percent"]
+        .mean()
+        .sort_values(by="Depth (microns)")
+        .reset_index(drop=True)
+    )
+
+    x_all = region_df["Depth (microns)"].values
+    y_all = region_df["White percent"].values
+
+    print(f"\n--- {region_name} Region ---")
+    print(f"Total unique depth points in region: {len(region_df)}")
+
+    if len(region_df) < 5:
+        print("Not enough points in this region for three-point interpolation.")
+        return None, None
+
+    # Keep first, median, and last points
+    mid_index = len(region_df) // 2
+    keep_indices = sorted(list(set([0, mid_index, len(region_df) - 1])))
+
+    train_df = region_df.iloc[keep_indices].copy()
+    test_df = region_df.drop(index=keep_indices).copy()
 
     x_train = train_df["Depth (microns)"].values
     y_train = train_df["White percent"].values
@@ -239,129 +431,141 @@ def compare_interpolation_region(df, xmin, xmax, region_name, num_compare_points
     x_test = x_test[valid_mask]
     y_test = y_test[valid_mask]
 
-    if len(x_test) < num_compare_points:
-        print(f"Only {len(x_test)} valid removed points available.")
-        num_compare_points = len(x_test)
-
     if len(x_test) == 0:
-        print("No valid removed points in interpolation range.")
-        return None
+        print("No removed points fell inside the interpolation range.")
+        return None, None
 
-    # Linear interpolation always attempted
+    # Linear interpolation
     linear_interp = interp1d(x_train, y_train, kind="linear")
     y_linear_pred = linear_interp(x_test)
 
-    # Quadratic interpolation only if enough unique points
-    quadratic_possible = len(np.unique(x_train)) >= 3
+    # Quadratic interpolation
+    quadratic_interp = interp1d(x_train, y_train, kind="quadratic")
+    y_quad_pred = quadratic_interp(x_test)
 
-    if quadratic_possible:
-        quadratic_interp = interp1d(x_train, y_train, kind="quadratic")
-        y_quad_pred = quadratic_interp(x_test)
-    else:
-        quadratic_interp = None
-        y_quad_pred = np.full_like(y_test, np.nan, dtype=float)
-
-    # Pick 5 evenly spaced removed points
-    compare_indices = np.linspace(0, len(x_test) - 1, num_compare_points, dtype=int)
-
-    x_compare = x_test[compare_indices]
-    y_actual_compare = y_test[compare_indices]
-    y_linear_compare = y_linear_pred[compare_indices]
-    y_quad_compare = y_quad_pred[compare_indices]
-
+    # Build comparison table for all removed points
     compare_df = pd.DataFrame({
-        "Depth (microns)": x_compare,
-        "Actual fibrosis (%)": y_actual_compare,
-        "Linear interpolation (%)": y_linear_compare,
-        "Quadratic interpolation (%)": y_quad_compare,
-        "Linear abs error": np.abs(y_linear_compare - y_actual_compare),
-        "Quadratic abs error": np.abs(y_quad_compare - y_actual_compare)
+        "Depth (microns)": x_test,
+        "Actual fibrosis (%)": y_test,
+        "Linear interpolation (%)": y_linear_pred,
+        "Quadratic interpolation (%)": y_quad_pred,
+        "Linear abs error": np.abs(y_linear_pred - y_test),
+        "Quadratic abs error": np.abs(y_quad_pred - y_test)
     })
 
-    print("\nComparison table:")
-    print(compare_df)
-
-    # Smooth interpolation curves
-    x_line = np.linspace(x_train.min(), x_train.max(), 400)
-    y_line_linear = linear_interp(x_line)
-
-    if quadratic_interp is not None:
-        y_line_quad = quadratic_interp(x_line)
-
-    # Sort comparison points so lines connect correctly
-    sort_idx = np.argsort(x_compare)
-    x_compare_sorted = x_compare[sort_idx]
-    y_actual_sorted = y_actual_compare[sort_idx]
-    y_linear_sorted = y_linear_compare[sort_idx]
-    y_quad_sorted = y_quad_compare[sort_idx]
-
-    plt.figure(figsize=(8, 5))
-    plt.scatter(x_all, y_all, alpha=0.6, label="Actual plotted points")
-    plt.plot(x_line, y_line_linear, linewidth=2, label="Linear interpolation")
-
-    if quadratic_interp is not None:
-        plt.plot(x_line, y_line_quad, linewidth=2, label="Quadratic interpolation")
-
-    plt.scatter(x_compare_sorted, y_actual_sorted, s=80, marker="o", label="5 actual comparison points")
-    plt.plot(
-        x_compare_sorted,
-        y_linear_sorted,
-        marker="x",
-        linestyle='-',
-        linewidth=2,
-        label="5 linear estimates"
+    compare_df["Linear percent error"] = np.where(
+        compare_df["Actual fibrosis (%)"] != 0,
+        compare_df["Linear abs error"] / compare_df["Actual fibrosis (%)"] * 100,
+        np.nan
     )
 
-    if quadratic_interp is not None:
-        plt.plot(
-            x_compare_sorted,
-            y_quad_sorted,
-            marker="^",
-            linestyle='-',
-            linewidth=2,
-            label="5 quadratic estimates"
-        )
+    compare_df["Quadratic percent error"] = np.where(
+        compare_df["Actual fibrosis (%)"] != 0,
+        compare_df["Quadratic abs error"] / compare_df["Actual fibrosis (%)"] * 100,
+        np.nan
+    )
+
+    print("\nComparison table for all removed points:")
+    print(compare_df)
+
+    # Reconstructed datasets
+    original_df = pd.DataFrame({
+        "Depth (microns)": x_all,
+        "Fibrosis (%)": y_all
+    }).sort_values(by="Depth (microns)")
+
+    linear_reconstructed_df = pd.DataFrame({
+        "Depth (microns)": np.concatenate([x_train, x_test]),
+        "Fibrosis (%)": np.concatenate([y_train, y_linear_pred])
+    }).sort_values(by="Depth (microns)")
+
+    quadratic_reconstructed_df = pd.DataFrame({
+        "Depth (microns)": np.concatenate([x_train, x_test]),
+        "Fibrosis (%)": np.concatenate([y_train, y_quad_pred])
+    }).sort_values(by="Depth (microns)")
+
+    # Plot
+    plt.figure(figsize=(9, 6))
+
+    plt.plot(
+        original_df["Depth (microns)"],
+        original_df["Fibrosis (%)"],
+        marker="o",
+        linestyle="-",
+        linewidth=2,
+        label="Original data"
+    )
+
+    plt.plot(
+        linear_reconstructed_df["Depth (microns)"],
+        linear_reconstructed_df["Fibrosis (%)"],
+        marker="x",
+        linestyle="-",
+        linewidth=2,
+        label="Linear interpolation + kept points"
+    )
+
+    plt.plot(
+        quadratic_reconstructed_df["Depth (microns)"],
+        quadratic_reconstructed_df["Fibrosis (%)"],
+        marker="^",
+        linestyle="-",
+        linewidth=2,
+        label="Quadratic interpolation + kept points"
+    )
+
+    plt.scatter(
+        x_train,
+        y_train,
+        s=110,
+        marker="s",
+        label="Kept points (first, median, last)"
+    )
 
     plt.xlabel("Depth (microns)")
     plt.ylabel("Fibrosis (%)")
-    plt.title(f"{region_name} Region: Actual vs Interpolated Points")
+    plt.title(f"{region_name} Region: Three-Point Interpolation Comparison")
     plt.grid(True)
     plt.legend()
     plt.show()
 
-    return compare_df
-
-# ---------------------------
-# Run interpolation comparison for each region
-# ---------------------------
-shallow_compare = compare_interpolation_region(results_df, 0, 2000, "Shallow", num_compare_points=5)
-mid_compare = compare_interpolation_region(results_df, 2000, 6000, "Mid", num_compare_points=5)
-deep_compare = compare_interpolation_region(results_df, 6000, 10000, "Deep", num_compare_points=5)
-
-# ---------------------------
-# Summary of interpolation errors
-# ---------------------------
-def summarize_errors(compare_df, region_name):
-    if compare_df is None:
-        return {
-            "Region": region_name,
-            "Mean linear abs error": np.nan,
-            "Mean quadratic abs error": np.nan
-        }
-
-    return {
+    # Summary
+    summary = {
         "Region": region_name,
-        "Mean linear abs error": compare_df["Linear abs error"].mean(),
-        "Mean quadratic abs error": compare_df["Quadratic abs error"].mean()
+        "Linear mean abs error": compare_df["Linear abs error"].mean(),
+        "Quadratic mean abs error": compare_df["Quadratic abs error"].mean(),
+        "Linear mean percent error": compare_df["Linear percent error"].mean(),
+        "Quadratic mean percent error": compare_df["Quadratic percent error"].mean()
     }
 
-summary_list = [
-    summarize_errors(shallow_compare, "Shallow"),
-    summarize_errors(mid_compare, "Mid"),
-    summarize_errors(deep_compare, "Deep")
-]
+    return compare_df, summary
 
-summary_df = pd.DataFrame(summary_list)
-print("\nAverage interpolation error summary:")
-print(summary_df)
+
+# ---------------------------
+# Run three-point comparison for each region
+# ---------------------------
+shallow_three_compare, shallow_three_summary = three_point_interpolation_region(
+    results_df, 0, 2000, "Shallow"
+)
+
+mid_three_compare, mid_three_summary = three_point_interpolation_region(
+    results_df, 2000, 6000, "Mid"
+)
+
+deep_three_compare, deep_three_summary = three_point_interpolation_region(
+    results_df, 6000, 10000, "Deep"
+)
+
+# ---------------------------
+# Summary table
+# ---------------------------
+three_point_summary_df = pd.DataFrame([
+    shallow_three_summary,
+    mid_three_summary,
+    deep_three_summary
+])
+
+print("\nThree-point interpolation error summary:")
+print(three_point_summary_df)
+
 # %%
